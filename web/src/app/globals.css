@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --sidebar: #111827;
+  --accent: #6366F1;
+  --gold: #F59E0B;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+
+body {
+  font-family: 'Segoe UI', -apple-system, 'Helvetica Neue', sans-serif;
+  background: #F1F5F9;
+  color: #0F172A;
+}
+
+input, select, textarea, button {
+  font-family: inherit;
+}

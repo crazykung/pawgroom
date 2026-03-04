@@ -1,0 +1,1006 @@
+// =============================================================================
+// PawGroom — Prisma Schema
+// PostgreSQL 16 + UUID extension
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum CustomerType {
+  walk_in
+  member
+  vip
+}
+
+enum PetSpecies {
+  dog
+  cat
+  rabbit
+  bird
+  other
+}
+
+enum PetSizeTier {
+  XS
+  S
+  M
+  L
+  XL
+}
+
+enum ServiceCategory {
+  bath
+  groom
+  addon
+}
+
+enum ResourceType {
+  groomer
+  station
+}
+
+enum AppointmentStatus {
+  pending
+  booked
+  checked_in
+  in_progress
+  completed
+  cancelled
+  no_show
+}
+
+enum AppointmentSource {
+  portal
+  staff
+  walk_in
+}
+
+enum QueueStatus {
+  waiting
+  in_progress
+  ready
+  completed
+  cancelled
+}
+
+enum JobStatus {
+  checked_in
+  in_progress
+  ready
+  completed
+  cancelled
+}
+
+enum InvoiceStatus {
+  draft
+  issued
+  void
+  refunded
+}
+
+enum InvoiceDocType {
+  receipt
+  tax_invoice
+}
+
+enum PaymentMethod {
+  cash
+  transfer
+  card
+  e_wallet
+  other
+}
+
+enum CompPlanScope {
+  global
+  role_based
+  groomer_specific
+}
+
+enum CompRuleType {
+  percent
+  fixed
+  split
+  bonus
+}
+
+enum CompRuleAppliesTo {
+  all
+  category
+  service
+}
+
+enum CompTransactionStatus {
+  pending
+  confirmed
+  reversed
+  paid
+}
+
+enum CompPeriodStatus {
+  open
+  closed
+  paid
+}
+
+enum CompAdjustmentType {
+  manual
+  reversal
+}
+
+enum MediaAssetType {
+  logo
+  favicon
+  photo
+  attachment
+}
+
+enum StorageDriver {
+  local
+  minio
+  s3
+}
+
+enum ReportType {
+  bar
+  line
+  pie
+  table
+  pivot
+}
+
+enum ReportExportStatus {
+  queued
+  processing
+  done
+  failed
+}
+
+enum ScopeType {
+  own
+  branch
+  all
+}
+
+enum DataScopeResource {
+  job_order
+  invoice
+  customer
+}
+
+enum DocumentType {
+  receipt
+  tax_invoice
+  credit_note
+}
+
+enum LineItemType {
+  service
+  product
+  fee
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ORG & AUTH
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  branches    Branch[]
+  users       User[]
+  roles       Role[]
+
+  @@map("tenants")
+}
+
+model Branch {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  name        String
+  address     Json?
+  phone       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users             User[]
+  customers         Customer[]
+  pets              Pet[]
+  services          Service[]
+  resources         Resource[]
+  appointments      Appointment[]
+  queueTickets      QueueTicket[]
+  jobOrders         JobOrder[]
+  invoices          Invoice[]
+  docSequences      DocumentSequence[]
+  compPeriods       CompPeriod[]
+  mediaAssets       MediaAsset[]
+  reportTemplates   ReportTemplate[]
+  companyProfile    CompanyProfile?
+  settingKvs        SettingKv[]
+
+  @@map("branches")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  branchId     String?
+  branch       Branch?  @relation(fields: [branchId], references: [id])
+  email        String
+  passwordHash String
+  firstName    String
+  lastName     String
+  phone        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  userRoles            UserRole[]
+  permissionOverrides  UserPermissionOverride[]
+  refreshTokens        RefreshToken[]
+  resource             Resource?
+  auditLogs            AuditLog[]
+
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  name        String
+  isSystem    Boolean  @default(false)
+  color       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userRoles        UserRole[]
+  rolePermissions  RolePermission[]
+  dataScopePolicies DataScopePolicy[]
+  compPlanAssignments CompPlanAssignment[]
+
+  @@unique([tenantId, name])
+  @@map("roles")
+}
+
+model Permission {
+  id     String @id @default(uuid())
+  code   String @unique
+  module String
+  label  String
+
+  rolePermissions     RolePermission[]
+  permissionOverrides UserPermissionOverride[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id])
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  id       String     @id @default(uuid())
+  userId   String
+  user     User       @relation(fields: [userId], references: [id])
+  roleId   String
+  role     Role       @relation(fields: [roleId], references: [id])
+  branchId String?
+  scope    ScopeType  @default(branch)
+
+  @@unique([userId, roleId, branchId])
+  @@map("user_roles")
+}
+
+model UserPermissionOverride {
+  id           String     @id @default(uuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id])
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id])
+  mode         String     // grant | deny
+
+  @@unique([userId, permissionId])
+  @@map("user_permission_overrides")
+}
+
+model DataScopePolicy {
+  id       String            @id @default(uuid())
+  roleId   String
+  role     Role              @relation(fields: [roleId], references: [id])
+  resource DataScopeResource
+  scope    ScopeType
+  params   Json?
+
+  @@unique([roleId, resource])
+  @@map("data_scope_policies")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String
+  branchId   String?
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String
+  resource   String
+  resourceId String?
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CUSTOMERS & PETS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Customer {
+  id          String       @id @default(uuid())
+  tenantId    String
+  branchId    String
+  branch      Branch       @relation(fields: [branchId], references: [id])
+  phone       String
+  firstName   String
+  lastName    String
+  email       String?
+  lineId      String?
+  type        CustomerType @default(walk_in)
+  tags        String[]
+  totalVisits Int          @default(0)
+  totalSpend  Decimal      @default(0) @db.Decimal(12, 2)
+  lastVisitAt DateTime?
+  notes       String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  pets         Pet[]
+  appointments Appointment[]
+  invoices     Invoice[]
+  queueTickets QueueTicket[]
+
+  @@unique([tenantId, phone])
+  @@map("customers")
+}
+
+model Pet {
+  id              String      @id @default(uuid())
+  customerId      String
+  customer        Customer    @relation(fields: [customerId], references: [id])
+  branchId        String
+  branch          Branch      @relation(fields: [branchId], references: [id])
+  name            String
+  species         PetSpecies
+  breed           String?
+  sizeTier        PetSizeTier @default(M)
+  weightKg        Decimal?    @db.Decimal(5, 2)
+  birthDate       DateTime?
+  color           String?
+  allergies       String?
+  notes           String?
+  groomingProfile Json?
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  appointments Appointment[]
+  jobOrders    JobOrder[]
+  petMedia     PetMedia[]
+
+  @@map("pets")
+}
+
+model PetMedia {
+  id        String        @id @default(uuid())
+  petId     String
+  pet       Pet           @relation(fields: [petId], references: [id])
+  jobId     String?
+  mediaType String        // before | after | profile
+  assetId   String
+  asset     MediaAsset    @relation(fields: [assetId], references: [id])
+  createdAt DateTime      @default(now())
+
+  @@map("pet_media")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SERVICES & PRICING
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Service {
+  id              String          @id @default(uuid())
+  branchId        String
+  branch          Branch          @relation(fields: [branchId], references: [id])
+  name            String
+  description     String?
+  category        ServiceCategory
+  baseDurationMin Int             @default(60)
+  taxable         Boolean         @default(true)
+  isActive        Boolean         @default(true)
+  sortOrder       Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  priceRules       PriceRule[]
+  appointmentItems AppointmentItem[]
+  jobItems         JobItem[]
+  compRules        CompRule[]
+
+  @@map("services")
+}
+
+model PriceRule {
+  id                 String      @id @default(uuid())
+  serviceId          String
+  service            Service     @relation(fields: [serviceId], references: [id])
+  species            PetSpecies?
+  sizeTier           PetSizeTier?
+  weightMin          Decimal?    @db.Decimal(5, 2)
+  weightMax          Decimal?    @db.Decimal(5, 2)
+  basePrice          Decimal     @db.Decimal(10, 2)
+  durationMultiplier Decimal     @default(1) @db.Decimal(4, 2)
+  priority           Int         @default(0)
+  isActive           Boolean     @default(true)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  @@map("price_rules")
+}
+
+model Surcharge {
+  id             String          @id @default(uuid())
+  branchId       String
+  name           String
+  description    String?
+  priceAdd       Decimal?        @db.Decimal(10, 2)
+  priceMultiplier Decimal?       @db.Decimal(4, 2)
+  appliesToCategory ServiceCategory?
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+
+  @@map("surcharges")
+}
+
+model Promotion {
+  id           String   @id @default(uuid())
+  branchId     String
+  name         String
+  code         String?
+  discountType String   // percent | fixed
+  discountValue Decimal @db.Decimal(10, 2)
+  minSpend     Decimal? @db.Decimal(10, 2)
+  maxUses      Int?
+  usedCount    Int      @default(0)
+  startDate    DateTime?
+  endDate      DateTime?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  @@unique([branchId, code])
+  @@map("promotions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEDULING
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Resource {
+  id       String       @id @default(uuid())
+  branchId String
+  branch   Branch       @relation(fields: [branchId], references: [id])
+  userId   String?      @unique
+  user     User?        @relation(fields: [userId], references: [id])
+  type     ResourceType
+  name     String
+  isActive Boolean      @default(true)
+  createdAt DateTime    @default(now())
+
+  workingHours ResourceWorkingHours[]
+  timeOffs     ResourceTimeOff[]
+  appointments Appointment[]
+  jobOrders    JobOrder[]
+  jobSplits    JobGroomerSplit[]
+  compAssignments CompPlanAssignment[]
+  compTransactions CompTransaction[]
+
+  @@map("resources")
+}
+
+model ResourceWorkingHours {
+  id         String   @id @default(uuid())
+  resourceId String
+  resource   Resource @relation(fields: [resourceId], references: [id])
+  dayOfWeek  Int      // 0=Sun, 1=Mon, ..., 6=Sat
+  startTime  String
+  endTime    String
+  breaks     Json?
+  isActive   Boolean  @default(true)
+
+  @@unique([resourceId, dayOfWeek])
+  @@map("resource_working_hours")
+}
+
+model ResourceTimeOff {
+  id         String   @id @default(uuid())
+  resourceId String
+  resource   Resource @relation(fields: [resourceId], references: [id])
+  startAt    DateTime
+  endAt      DateTime
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@map("resource_time_off")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// APPOINTMENTS & QUEUE
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Appointment {
+  id                    String            @id @default(uuid())
+  branchId              String
+  branch                Branch            @relation(fields: [branchId], references: [id])
+  customerId            String
+  customer              Customer          @relation(fields: [customerId], references: [id])
+  petId                 String
+  pet                   Pet               @relation(fields: [petId], references: [id])
+  resourceId            String?
+  resource              Resource?         @relation(fields: [resourceId], references: [id])
+  source                AppointmentSource @default(staff)
+  status                AppointmentStatus @default(booked)
+  startAt               DateTime
+  endAt                 DateTime
+  depositAmount         Decimal?          @db.Decimal(10, 2)
+  depositPaid           Boolean           @default(false)
+  notes                 String?
+  cancelReason          String?
+  reminderSentAt        DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  items    AppointmentItem[]
+  jobOrder JobOrder?
+
+  @@map("appointments")
+}
+
+model AppointmentItem {
+  id               String   @id @default(uuid())
+  appointmentId    String
+  appointment      Appointment @relation(fields: [appointmentId], references: [id])
+  serviceId        String
+  service          Service  @relation(fields: [serviceId], references: [id])
+  quantity         Int      @default(1)
+  selectedSurcharges Json?
+  estimatedPrice   Decimal  @db.Decimal(10, 2)
+  estimatedDuration Int
+  createdAt        DateTime @default(now())
+
+  @@map("appointment_items")
+}
+
+model QueueTicket {
+  id             String      @id @default(uuid())
+  branchId       String
+  branch         Branch      @relation(fields: [branchId], references: [id])
+  customerId     String?
+  customer       Customer?   @relation(fields: [customerId], references: [id])
+  ticketNo       String
+  status         QueueStatus @default(waiting)
+  priority       Int         @default(0)
+  estimatedWaitMin Int?
+  notes          String?
+  checkedInAt    DateTime?
+  calledAt       DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  jobOrder JobOrder?
+
+  @@unique([branchId, ticketNo])
+  @@map("queue_tickets")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// JOB ORDERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model JobOrder {
+  id              String     @id @default(uuid())
+  branchId        String
+  branch          Branch     @relation(fields: [branchId], references: [id])
+  petId           String
+  pet             Pet        @relation(fields: [petId], references: [id])
+  appointmentId   String?    @unique
+  appointment     Appointment? @relation(fields: [appointmentId], references: [id])
+  queueTicketId   String?    @unique
+  queueTicket     QueueTicket? @relation(fields: [queueTicketId], references: [id])
+  assignedResourceId String?
+  resource        Resource?  @relation(fields: [assignedResourceId], references: [id])
+  status          JobStatus  @default(checked_in)
+  startAt         DateTime?
+  endAt           DateTime?
+  beforeCondition Json?
+  afterCondition  Json?
+  notes           String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  items         JobItem[]
+  groomerSplits JobGroomerSplit[]
+  invoices      Invoice[]
+
+  @@map("job_orders")
+}
+
+model JobItem {
+  id              String   @id @default(uuid())
+  jobOrderId      String
+  jobOrder        JobOrder @relation(fields: [jobOrderId], references: [id])
+  serviceId       String
+  service         Service  @relation(fields: [serviceId], references: [id])
+  quantity        Int      @default(1)
+  appliedPrice    Decimal  @db.Decimal(10, 2)
+  appliedDuration Int
+  appliedSurcharges Json?
+  discountAmount  Decimal  @default(0) @db.Decimal(10, 2)
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  @@map("job_items")
+}
+
+model JobGroomerSplit {
+  id         String   @id @default(uuid())
+  jobOrderId String
+  jobOrder   JobOrder @relation(fields: [jobOrderId], references: [id])
+  resourceId String
+  resource   Resource @relation(fields: [resourceId], references: [id])
+  role       String   // main | assistant
+  ratio      Decimal  @db.Decimal(4, 2)
+  createdAt  DateTime @default(now())
+
+  @@unique([jobOrderId, resourceId])
+  @@map("job_groomer_splits")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INVOICING & TAX
+// ─────────────────────────────────────────────────────────────────────────────
+
+model DocumentSequence {
+  id         String       @id @default(uuid())
+  branchId   String
+  branch     Branch       @relation(fields: [branchId], references: [id])
+  docType    DocumentType
+  prefix     String
+  runningNo  Int          @default(0)
+  year       Int
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@unique([branchId, docType, year])
+  @@map("document_sequences")
+}
+
+model Invoice {
+  id            String        @id @default(uuid())
+  branchId      String
+  branch        Branch        @relation(fields: [branchId], references: [id])
+  jobOrderId    String
+  jobOrder      JobOrder      @relation(fields: [jobOrderId], references: [id])
+  customerId    String
+  customer      Customer      @relation(fields: [customerId], references: [id])
+  docType       InvoiceDocType @default(receipt)
+  docNo         String?
+  status        InvoiceStatus @default(draft)
+  subtotal      Decimal       @db.Decimal(12, 2)
+  discountAmount Decimal      @default(0) @db.Decimal(12, 2)
+  vatRate       Decimal       @default(7) @db.Decimal(5, 2)
+  vatAmount     Decimal       @default(0) @db.Decimal(12, 2)
+  total         Decimal       @db.Decimal(12, 2)
+  promotionId   String?
+  notes         String?
+  issuedAt      DateTime?
+  voidedAt      DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  lines           InvoiceLine[]
+  payments        Payment[]
+  creditNotes     CreditNote[]
+  compTransactions CompTransaction[]
+
+  @@unique([branchId, docNo])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id          String       @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice      @relation(fields: [invoiceId], references: [id])
+  lineType    LineItemType
+  description String
+  quantity    Int          @default(1)
+  unitPrice   Decimal      @db.Decimal(10, 2)
+  vatRate     Decimal      @default(7) @db.Decimal(5, 2)
+  vatAmount   Decimal      @default(0) @db.Decimal(10, 2)
+  lineTotal   Decimal      @db.Decimal(10, 2)
+  sortOrder   Int          @default(0)
+  createdAt   DateTime     @default(now())
+
+  compTransactions CompTransaction[]
+
+  @@map("invoice_lines")
+}
+
+model Payment {
+  id        String        @id @default(uuid())
+  invoiceId String
+  invoice   Invoice       @relation(fields: [invoiceId], references: [id])
+  method    PaymentMethod
+  amount    Decimal       @db.Decimal(12, 2)
+  paidAt    DateTime      @default(now())
+  refCode   String?
+  notes     String?
+  createdAt DateTime      @default(now())
+
+  @@map("payments")
+}
+
+model CreditNote {
+  id        String   @id @default(uuid())
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id])
+  docNo     String
+  reason    String
+  amount    Decimal  @db.Decimal(12, 2)
+  issuedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@map("credit_notes")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPENSATION
+// ─────────────────────────────────────────────────────────────────────────────
+
+model CompPlan {
+  id            String        @id @default(uuid())
+  branchId      String
+  name          String
+  scope         CompPlanScope @default(global)
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  assignments CompPlanAssignment[]
+  rules       CompRule[]
+
+  @@map("comp_plans")
+}
+
+model CompPlanAssignment {
+  id         String   @id @default(uuid())
+  planId     String
+  plan       CompPlan @relation(fields: [planId], references: [id])
+  resourceId String?
+  resource   Resource? @relation(fields: [resourceId], references: [id])
+  roleId     String?
+  role       Role?    @relation(fields: [roleId], references: [id])
+  priority   Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@map("comp_plan_assignments")
+}
+
+model CompRule {
+  id         String            @id @default(uuid())
+  planId     String
+  plan       CompPlan          @relation(fields: [planId], references: [id])
+  ruleType   CompRuleType
+  appliesTo  CompRuleAppliesTo @default(all)
+  serviceId  String?
+  service    Service?          @relation(fields: [serviceId], references: [id])
+  params     Json
+  createdAt  DateTime          @default(now())
+
+  @@map("comp_rules")
+}
+
+model CompPeriod {
+  id        String           @id @default(uuid())
+  branchId  String
+  branch    Branch           @relation(fields: [branchId], references: [id])
+  startDate DateTime
+  endDate   DateTime
+  status    CompPeriodStatus @default(open)
+  closedAt  DateTime?
+  paidAt    DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  transactions CompTransaction[]
+  adjustments  CompAdjustment[]
+
+  @@map("comp_periods")
+}
+
+model CompTransaction {
+  id           String                @id @default(uuid())
+  periodId     String
+  period       CompPeriod            @relation(fields: [periodId], references: [id])
+  invoiceId    String
+  invoice      Invoice               @relation(fields: [invoiceId], references: [id])
+  invoiceLineId String?
+  invoiceLine  InvoiceLine?          @relation(fields: [invoiceLineId], references: [id])
+  jobOrderId   String?
+  resourceId   String
+  resource     Resource              @relation(fields: [resourceId], references: [id])
+  baseAmount   Decimal               @db.Decimal(12, 2)
+  compAmount   Decimal               @db.Decimal(12, 2)
+  status       CompTransactionStatus @default(pending)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@map("comp_transactions")
+}
+
+model CompAdjustment {
+  id        String             @id @default(uuid())
+  periodId  String
+  period    CompPeriod         @relation(fields: [periodId], references: [id])
+  type      CompAdjustmentType
+  resourceId String?
+  amount    Decimal            @db.Decimal(12, 2)
+  reason    String?
+  createdAt DateTime           @default(now())
+
+  @@map("comp_adjustments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SETTINGS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model CompanyProfile {
+  id                  String   @id @default(uuid())
+  branchId            String   @unique
+  branch              Branch   @relation(fields: [branchId], references: [id])
+  displayName         String
+  legalName           String?
+  logoAssetId         String?
+  faviconAssetId      String?
+  primaryColor        String   @default("#6366F1")
+  phone               String?
+  email               String?
+  address             Json?
+  taxId               String?
+  vatRate             Decimal  @default(7) @db.Decimal(5, 2)
+  pricesVatIncluded   Boolean  @default(false)
+  receiptFooterText   String?
+  invoiceFooterText   String?
+  paperSize           String   @default("80mm") // 80mm | A4
+  currency            String   @default("THB")
+  timezone            String   @default("Asia/Bangkok")
+  updatedAt           DateTime @updatedAt
+
+  @@map("company_profiles")
+}
+
+model SettingKv {
+  id        String   @id @default(uuid())
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@unique([branchId, key])
+  @@map("setting_kvs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MEDIA ASSETS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model MediaAsset {
+  id          String         @id @default(uuid())
+  branchId    String
+  branch      Branch         @relation(fields: [branchId], references: [id])
+  type        MediaAssetType
+  filename    String
+  mimeType    String
+  sizeBytes   Int
+  driver      StorageDriver  @default(minio)
+  bucket      String?
+  objectKey   String?
+  localPath   String?
+  publicUrl   String?
+  createdAt   DateTime       @default(now())
+
+  petMedia    PetMedia[]
+
+  @@map("media_assets")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REPORT BUILDER
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ReportTemplate {
+  id             String   @id @default(uuid())
+  branchId       String
+  branch         Branch   @relation(fields: [branchId], references: [id])
+  name           String
+  templateType   ReportType @default(bar)
+  datasetCode    String
+  designJson     Json
+  paperJson      Json?
+  version        Int      @default(1)
+  isPublished    Boolean  @default(false)
+  editableRoles  String[]
+  viewableRoles  String[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  exports ReportExport[]
+
+  @@map("report_templates")
+}
+
+model ReportExport {
+  id          String             @id @default(uuid())
+  templateId  String
+  template    ReportTemplate     @relation(fields: [templateId], references: [id])
+  status      ReportExportStatus @default(queued)
+  paramsJson  Json?
+  resultAssetId String?
+  errorMessage  String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@map("report_exports")
+}

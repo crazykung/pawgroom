@@ -14,7 +14,7 @@ COPY package*.json ./
 COPY prisma ./prisma/
 
 # Install ALL deps (including devDeps for build)
-RUN npm ci --prefer-offline
+RUN npm install --prefer-offline
 
 # ── Stage 2: Build ────────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
@@ -48,7 +48,7 @@ COPY --from=builder --chown=nestjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nestjs:nodejs /app/package.json ./package.json
 
 # Thai fonts for PDF rendering (Playwright)
-COPY --chown=nestjs:nodejs fonts/ ./fonts/
+COPY --chown=nestjs:nodejs fonts ./fonts
 
 # Playwright Chromium for PDF export
 RUN npx playwright install --with-deps chromium 2>/dev/null || true

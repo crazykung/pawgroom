@@ -5,13 +5,11 @@ export class CreateAppointmentItemDto {
   @IsString()
   serviceId: string;
 
-  @IsOptional()
   @IsNumber()
-  estimatedPrice?: number;
+  estimatedPrice: number;   // required (Decimal NOT NULL in schema)
 
-  @IsOptional()
   @IsNumber()
-  estimatedDuration?: number;
+  estimatedDuration: number; // required (Int NOT NULL in schema)
 }
 
 export class CreateAppointmentDto {

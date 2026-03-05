@@ -56,7 +56,7 @@ export class AppointmentsService {
       });
       if (items?.length) {
         await tx.appointmentItem.createMany({
-          data: items.map((item) => ({ ...item, appointmentId: appt.id })),
+          data: items.map((item) => ({ estimatedPrice: 0, estimatedDuration: 60, ...item, appointmentId: appt.id })),
         });
       }
       return appt;

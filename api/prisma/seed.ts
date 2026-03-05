@@ -229,7 +229,8 @@ async function main() {
     const prices = { bath: { S: 250, M: 320, L: 420, XL: 550 }, groom: { S: 380, M: 480, L: 620, XL: 800 }, addon: { S: 50, M: 60, L: 80, XL: 100 } };
     const svcPrices = prices[svc.category] || prices.addon;
 
-    for (const [sizeTier, basePrice] of Object.entries(svcPrices)) {
+    for (const [sizeTier, basePriceRaw] of Object.entries(svcPrices)) {
+      const basePrice = Number(basePriceRaw);
       await prisma.priceRule.create({
         data: {
           serviceId: service.id,

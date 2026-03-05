@@ -29,7 +29,7 @@ export class InvoicesService {
       where: { id, branchId },
       include: {
         customer: true,
-        jobOrder: { include: { pet: true, assignedResource: { select: { id: true, name: true } } } },
+        jobOrder: { include: { pet: true, resource: { select: { id: true, name: true } } } },
         lines: true,
         payments: true,
         creditNotes: true,

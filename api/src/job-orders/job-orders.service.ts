@@ -21,7 +21,7 @@ export class JobOrdersService {
       include: {
         pet: { include: { customer: { select: { id: true, firstName: true, lastName: true, phone: true } } } },
         items: { include: { service: true } },
-        assignedResource: { select: { id: true, name: true } },
+        resource: { select: { id: true, name: true } },
         groomerSplits: { include: { resource: { select: { id: true, name: true } } } },
       },
       orderBy: { createdAt: 'asc' },
@@ -44,7 +44,7 @@ export class JobOrdersService {
       include: {
         pet: { include: { customer: true } },
         items: { include: { service: { include: { priceRules: true } } } },
-        assignedResource: true,
+        resource: true,
         groomerSplits: { include: { resource: true } },
         invoices: true,
       },

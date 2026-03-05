@@ -18,16 +18,31 @@ export class ReportsService {
     return tpl;
   }
 
-  async createTemplate(branchId: string, dto: { name: string; templateType?: any; datasetCode: string; designJson: any; paperJson?: any }) {
+  async createTemplate(branchId: string, dto: {
+    name: string;
+    templateType?: any;
+    datasetCode: string;
+    designJson: any;
+    paperJson?: any;
+  }) {
     return this.prisma.reportTemplate.create({ data: { ...dto, branchId } });
   }
 
-  async updateTemplate(id: string, branchId: string, dto: Partial<{ name: string; designJson: any; paperJson: any; isPublished: boolean }>) {
+  async updateTemplate(id: string, branchId: string, dto: Partial<{
+    name: string;
+    designJson: any;
+    paperJson: any;
+    isPublished: boolean;
+  }>) {
     await this.getTemplate(id, branchId);
-    return this.prisma.reportTemplate.update({ where: { id }, data: { ...dto, version: { increment: 1 } } });
+    return this.prisma.reportTemplate.update({
+      where: { id },
+      data: { ...dto, version: { increment: 1 } },
+    });
   }
 
   // ── Data Queries ───────────────────────────────────────────────────────────
+
   async querySalesData(branchId: string, dateFrom: string, dateTo: string) {
     const invoices = await this.prisma.invoice.findMany({
       where: {
@@ -42,7 +57,7 @@ export class ReportsService {
         jobOrder: {
           include: {
             pet: { select: { name: true, species: true, sizeTier: true } },
-            assignedResource: { select: { name: true } },
+            resource: { select: { name: true } },
           },
         },
       },
@@ -52,14 +67,18 @@ export class ReportsService {
     const rows = invoices.map((inv) => ({
       date: inv.issuedAt?.toISOString().slice(0, 10),
       docNo: inv.docNo,
-      customerName: inv.customer ? `${inv.customer.firstName} ${inv.customer.lastName}` : '',
+      customerName: inv.customer
+        ? `${inv.customer.firstName} ${inv.customer.lastName}`
+        : '',
       petName: inv.jobOrder?.pet?.name ?? '',
       species: inv.jobOrder?.pet?.species ?? '',
       sizeTier: inv.jobOrder?.pet?.sizeTier ?? '',
-      groomer: inv.jobOrder?.assignedResource?.name ?? '',
+      groomer: inv.jobOrder?.resource?.name ?? '',
       grossSales: parseFloat(inv.subtotal.toString()),
       discountAmount: parseFloat(inv.discountAmount.toString()),
-      netSales: parseFloat(inv.total.toString()) - parseFloat(inv.vatAmount.toString()),
+      netSales:
+        parseFloat(inv.total.toString()) -
+        parseFloat(inv.vatAmount.toString()),
       vatAmount: parseFloat(inv.vatAmount.toString()),
       total: parseFloat(inv.total.toString()),
       paymentMethod: inv.payments[0]?.method ?? '',
@@ -86,17 +105,20 @@ export class ReportsService {
       include: {
         pet: { select: { species: true, sizeTier: true } },
         items: { include: { service: { select: { name: true, category: true } } } },
-        assignedResource: { select: { name: true } },
+        resource: { select: { name: true } },
       },
     });
 
     return jobs.map((job) => ({
       date: job.endAt?.toISOString().slice(0, 10),
-      groomer: job.assignedResource?.name ?? '',
+      groomer: job.resource?.name ?? '',
       species: job.pet.species,
       sizeTier: job.pet.sizeTier,
       services: job.items.map((i) => i.service.name).join(', '),
-      revenue: job.items.reduce((s, i) => s + parseFloat(i.appliedPrice.toString()), 0),
+      revenue: job.items.reduce(
+        (s, i) => s + parseFloat(i.appliedPrice.toString()),
+        0,
+      ),
     }));
   }
 

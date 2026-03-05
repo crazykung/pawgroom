@@ -24,7 +24,7 @@ export class QueueService {
           include: {
             pet: { select: { id: true, name: true, species: true, breed: true, sizeTier: true } },
             items: { include: { service: { select: { id: true, name: true } } } },
-            assignedResource: { select: { id: true, name: true } },
+            resource: { select: { id: true, name: true } },
           },
         },
       },

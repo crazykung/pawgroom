@@ -1,11 +1,11 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageDriver, MediaAssetType } from '@prisma/client';
 import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
-  GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import * as fs from 'fs';
@@ -16,7 +16,7 @@ import * as crypto from 'crypto';
 export class MediaService {
   private readonly logger = new Logger(MediaService.name);
   private s3: S3Client | null = null;
-  private readonly driver: string;
+  private readonly driver: StorageDriver;
   private readonly bucket: string;
   private readonly uploadDir: string;
 
@@ -24,11 +24,12 @@ export class MediaService {
     private config: ConfigService,
     private prisma: PrismaService,
   ) {
-    this.driver = config.get('STORAGE_DRIVER', 'local');
+    const driverStr = config.get('STORAGE_DRIVER', 'local');
+    this.driver = driverStr as StorageDriver;
     this.bucket = config.get('MINIO_BUCKET', 'pawgroom');
     this.uploadDir = config.get('UPLOAD_DIR', '/var/lib/pawgroom/uploads');
 
-    if (this.driver === 'minio') {
+    if (this.driver === StorageDriver.minio) {
       this.s3 = new S3Client({
         endpoint: config.get('MINIO_ENDPOINT', 'http://minio:9000'),
         region: 'ap-southeast-1',
@@ -41,121 +42,95 @@ export class MediaService {
     }
   }
 
-  /** Generate a presigned upload URL (for client-side direct upload) */
-  async presignUpload(
-    tenantId: string,
-    filename: string,
-    contentType: string,
-    expiresIn = 300,
-  ) {
-    if (this.driver !== 'minio') {
+  async presignUpload(branchId: string, filename: string, contentType: string, expiresIn = 300) {
+    if (this.driver !== StorageDriver.minio) {
       throw new BadRequestException('Presigned upload requires MinIO driver');
     }
-
     const ext = path.extname(filename);
-    const key = `${tenantId}/${crypto.randomUUID()}${ext}`;
-
-    const command = new PutObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-      ContentType: contentType,
-    });
-
-    const url = await getSignedUrl(this.s3!, command, { expiresIn });
-    return { uploadUrl: url, key };
+    const objectKey = `${branchId}/${crypto.randomUUID()}${ext}`;
+    const command = new PutObjectCommand({ Bucket: this.bucket, Key: objectKey, ContentType: contentType });
+    const uploadUrl = await getSignedUrl(this.s3!, command, { expiresIn });
+    return { uploadUrl, objectKey };
   }
 
-  /** Save a file buffer (for server-side uploads) */
-  async save(
-    tenantId: string,
-    filename: string,
-    buffer: Buffer,
-    contentType: string,
-  ): Promise<{ key: string; url: string }> {
+  async save(branchId: string, filename: string, buffer: Buffer, contentType: string) {
     const ext = path.extname(filename);
-    const key = `${tenantId}/${crypto.randomUUID()}${ext}`;
+    const objectKey = `${branchId}/${crypto.randomUUID()}${ext}`;
 
-    if (this.driver === 'minio') {
-      await this.s3!.send(
-        new PutObjectCommand({
-          Bucket: this.bucket,
-          Key: key,
-          Body: buffer,
-          ContentType: contentType,
-        }),
-      );
+    if (this.driver === StorageDriver.minio) {
+      await this.s3!.send(new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey,
+        Body: buffer,
+        ContentType: contentType,
+      }));
     } else {
-      const dest = path.join(this.uploadDir, key);
+      const dest = path.join(this.uploadDir, objectKey);
       await fs.promises.mkdir(path.dirname(dest), { recursive: true });
       await fs.promises.writeFile(dest, buffer);
     }
 
-    const url = this.getPublicUrl(key);
-    return { key, url };
+    const publicUrl = this.getPublicUrl(objectKey);
+    return { objectKey, publicUrl };
   }
 
-  /** Record asset in DB */
-  async createAsset(
-    tenantId: string,
-    data: {
-      key: string;
-      originalName: string;
-      mimeType: string;
-      size: number;
-      url: string;
-      entityType?: string;
-      entityId?: string;
-    },
-  ) {
+  async createAsset(branchId: string, data: {
+    objectKey: string;
+    filename: string;
+    mimeType: string;
+    sizeBytes: number;
+    publicUrl?: string;
+    type?: MediaAssetType;
+    bucket?: string;
+    localPath?: string;
+  }) {
     return this.prisma.mediaAsset.create({
       data: {
-        tenantId,
-        ...data,
+        branchId,
         driver: this.driver,
+        bucket: this.driver === StorageDriver.minio ? this.bucket : undefined,
+        type: data.type ?? MediaAssetType.photo,
+        filename: data.filename,
+        mimeType: data.mimeType,
+        sizeBytes: data.sizeBytes,
+        objectKey: data.objectKey,
+        publicUrl: data.publicUrl,
+        localPath: data.localPath,
       },
     });
   }
 
-  async delete(key: string): Promise<void> {
-    if (this.driver === 'minio') {
-      await this.s3!.send(
-        new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
-      );
+  async deleteByObjectKey(objectKey: string): Promise<void> {
+    if (this.driver === StorageDriver.minio) {
+      await this.s3!.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: objectKey }));
     } else {
-      const filePath = path.join(this.uploadDir, key);
+      const filePath = path.join(this.uploadDir, objectKey);
       await fs.promises.unlink(filePath).catch(() => {
-        this.logger.warn(`File not found for deletion: ${filePath}`);
+        this.logger.warn(`File not found: ${filePath}`);
       });
     }
   }
 
-  getPublicUrl(key: string): string {
-    if (this.driver === 'minio') {
+  getPublicUrl(objectKey: string): string {
+    if (this.driver === StorageDriver.minio) {
       const endpoint = this.config.get('MINIO_PUBLIC_URL', '');
-      return `${endpoint}/${this.bucket}/${key}`;
+      return `${endpoint}/${this.bucket}/${objectKey}`;
     }
     const domain = this.config.get('DOMAIN', 'localhost');
-    return `https://${domain}/uploads/${key}`;
+    return `https://${domain}/uploads/${objectKey}`;
   }
 
-  async listAssets(tenantId: string, entityType?: string, entityId?: string) {
+  async listAssets(branchId: string) {
     return this.prisma.mediaAsset.findMany({
-      where: {
-        tenantId,
-        ...(entityType && { entityType }),
-        ...(entityId && { entityId }),
-      },
+      where: { branchId },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async deleteAsset(tenantId: string, assetId: string): Promise<void> {
-    const asset = await this.prisma.mediaAsset.findFirst({
-      where: { id: assetId, tenantId },
-    });
+  async deleteAsset(branchId: string, assetId: string): Promise<void> {
+    const asset = await this.prisma.mediaAsset.findFirst({ where: { id: assetId, branchId } });
     if (!asset) return;
-
-    await this.delete(asset.key);
+    if (asset.objectKey) await this.deleteByObjectKey(asset.objectKey);
     await this.prisma.mediaAsset.delete({ where: { id: assetId } });
   }
 }
